@@ -1,13 +1,18 @@
 import sys
 import socket
 import json
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QSplitter, QScrollArea
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
 from PyQt5.QtCore import Qt, QTimer, QSize
 from PyQt5.QtGui import QFont, QImage, QPainter, QColor
 import os
 import signal
 
 os.environ['DISPLAY'] = ':0'
+
+header_font_size = 110
+header_size = 180
+order_font_size = 70
+order_widget_size = 120
 
 
 class CustomerDisplay(QWidget):
@@ -36,45 +41,74 @@ class CustomerDisplay(QWidget):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.setStyleSheet("QSplitter::handle { background-color: rgba(50, 50, 50, 50); }")
-        main_layout.addWidget(self.splitter)
-
+        # Create left side (active orders)
         self.active_widget = QWidget()
         self.active_widget.setAttribute(Qt.WA_TranslucentBackground)
         self.active_layout = QVBoxLayout(self.active_widget)
         self.active_layout.setAlignment(Qt.AlignTop)
         self.active_layout.setSpacing(10)
-        self.splitter.addWidget(self.active_widget)
 
+        # Create right side (completed orders)
         self.completed_widget = QWidget()
         self.completed_widget.setAttribute(Qt.WA_TranslucentBackground)
         self.completed_layout = QVBoxLayout(self.completed_widget)
         self.completed_layout.setAlignment(Qt.AlignTop)
         self.completed_layout.setSpacing(10)
-        self.splitter.addWidget(self.completed_widget)
 
-        self.splitter.setSizes([self.width() // 2, self.width() // 2])
+        # Add both widgets to main layout with equal stretch (50% each)
+        main_layout.addWidget(self.active_widget, 1)  # stretch factor 1 = 50%
+        main_layout.addWidget(self.completed_widget, 1)  # stretch factor 1 = 50%
 
+        # Create headers
         self.active_header = self.create_header_label("Küpseb")
         self.completed_header = self.create_header_label("Valmis")
 
         self.active_layout.addWidget(self.active_header)
         self.completed_layout.addWidget(self.completed_header)
 
-        self.active_scroll = self.create_scroll_area()
-        self.completed_scroll = self.create_scroll_area()
+        # Create fixed column structures
+        self.active_order_container, self.active_columns = self.create_order_container_with_columns()
+        self.completed_order_container, self.completed_columns = self.create_order_container_with_columns()
 
-        self.active_layout.addWidget(self.active_scroll)
-        self.completed_layout.addWidget(self.completed_scroll)
+        self.active_layout.addWidget(self.active_order_container)
+        self.completed_layout.addWidget(self.completed_order_container)
 
     def create_header_label(self, text):
         label = QLabel(text)
-        label.setFont(QFont("Bebas neue", 150, QFont.Bold))
+        label.setFont(QFont("Bebas neue", header_font_size, QFont.Bold))
         label.setAlignment(Qt.AlignCenter)
         label.setStyleSheet("color: white; background-color: rgba(0, 0, 0, 100); border-radius: 10px; padding: 5px;")
-        label.setFixedHeight(200)
+        label.setFixedHeight(header_size)
         return label
+
+    def create_order_container_with_columns(self):
+        """Create a fixed-height container with 3 pre-made columns"""
+        container = QWidget()
+        container.setAttribute(Qt.WA_TranslucentBackground)
+        container.setStyleSheet("background: transparent;")
+        # Set a fixed height that can accommodate 4 orders + spacing
+        container.setFixedHeight(4 * order_widget_size + 4 * 5 + 20)  # 4 orders + gaps + padding
+        
+        # Create the main horizontal layout
+        main_layout = QHBoxLayout(container)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+        
+        # Create 3 columns (we'll show/hide them as needed)
+        columns = []
+        for i in range(3):
+            column_widget = QWidget()
+            column_widget.setAttribute(Qt.WA_TranslucentBackground)
+            column_layout = QVBoxLayout(column_widget)
+            column_layout.setAlignment(Qt.AlignTop)
+            column_layout.setSpacing(5)
+            column_layout.setContentsMargins(0, 0, 0, 0)
+            columns.append((column_widget, column_layout))
+            main_layout.addWidget(column_widget)
+            # Initially hide all columns
+            column_widget.hide()
+        
+        return container, columns
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -85,18 +119,6 @@ class CustomerDisplay(QWidget):
         else:
             painter.fillRect(self.rect(), QColor(200, 200, 200))  # Light gray background
 
-    def create_scroll_area(self):
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        scroll_content = QWidget()
-        scroll_content.setStyleSheet("background: transparent;")
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setAlignment(Qt.AlignTop)
-        scroll_layout.setSpacing(5)
-        scroll.setWidget(scroll_content)
-        return scroll
-
     def scale_background(self):
         if not self.background.isNull():
             self.scaled_background = self.background.scaled(
@@ -106,37 +128,49 @@ class CustomerDisplay(QWidget):
             )
 
     def update_display(self):
-        self.update_orders(self.active_scroll, self.active_orders)
-        self.update_orders(self.completed_scroll, self.completed_orders)
+        self.update_orders(self.active_columns, self.active_orders)
+        self.update_orders(self.completed_columns, self.completed_orders)
 
-    def update_orders(self, scroll_area, numbers):
-        scroll_content = scroll_area.widget()
-        layout = scroll_content.layout()
-
-        self.clear_layout(layout)
-
-        h_layout = QHBoxLayout()
-        layout.addLayout(h_layout)
-
-        left_column = QVBoxLayout()
-        middle_column = QVBoxLayout()
-        right_column = QVBoxLayout()
-        h_layout.addLayout(left_column)
-        h_layout.addLayout(middle_column)
-        h_layout.addLayout(right_column)
-
-        for i, number in enumerate(numbers):
-            order_widget = self.create_order_widget(number)
-            if i < 5:
-                left_column.addWidget(order_widget)
-            elif i < 10:
-                middle_column.addWidget(order_widget)
-            elif i < 15:
-                right_column.addWidget(order_widget)
-
-        left_column.addStretch(1)
-        middle_column.addStretch(1)
-        right_column.addStretch(1)
+    def update_orders(self, columns, numbers):
+        """Update orders using pre-existing column structure"""
+        # Clear all columns first
+        for column_widget, column_layout in columns:
+            self.clear_layout(column_layout)
+            column_widget.hide()
+        
+        # Only show first 12 orders maximum (4 per column × 3 columns)
+        visible_orders = numbers[:12]
+        
+        if not visible_orders:
+            return
+        
+        # Determine number of columns based on order count
+        order_count = len(visible_orders)
+        if order_count <= 4:
+            num_columns = 1
+        elif order_count <= 8:
+            num_columns = 2
+        else:
+            num_columns = 3
+        
+        # Show and populate the required columns
+        orders_per_column = 4  # Maximum 4 orders per column
+        
+        for col_idx in range(num_columns):
+            column_widget, column_layout = columns[col_idx]
+            column_widget.show()
+            
+            # Add orders to this column
+            start_idx = col_idx * orders_per_column
+            end_idx = min(start_idx + orders_per_column, len(visible_orders))
+            
+            for order_idx in range(start_idx, end_idx):
+                if order_idx < len(visible_orders):
+                    order_widget = self.create_order_widget(visible_orders[order_idx])
+                    column_layout.addWidget(order_widget)
+            
+            # Add stretch to fill remaining space
+            column_layout.addStretch(1)
 
     def create_order_widget(self, order_number):
         order_widget = QFrame()
@@ -144,10 +178,10 @@ class CustomerDisplay(QWidget):
         order_layout = QVBoxLayout(order_widget)
         order_layout.setContentsMargins(10, 10, 10, 10)
         order_label = QLabel(f"{str(order_number).zfill(3)}")
-        order_label.setFont(QFont("Bebas neue", 100))
+        order_label.setFont(QFont("Bebas neue", order_font_size))
         order_label.setAlignment(Qt.AlignCenter)
         order_layout.addWidget(order_label)
-        order_widget.setFixedHeight(160)
+        order_widget.setFixedHeight(order_widget_size)
         return order_widget
 
     def clear_layout(self, layout):
@@ -219,5 +253,5 @@ if __name__ == "__main__":
     timer.timeout.connect(lambda: None)
 
     window.show()
-    window.update_display()
+
     sys.exit(app.exec_())
