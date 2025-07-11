@@ -5,7 +5,7 @@ import threading
 import time
 import bluetooth
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame
-from PyQt5.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QImage, QPainter, QColor
 import os
 import signal
@@ -93,7 +93,6 @@ class CustomerDisplay(QWidget):
 
         container.setFixedHeight(4 * order_widget_size + 4 * 5 + 20)
         
-        # Create the main horizontal layout
         main_layout = QHBoxLayout(container)
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
@@ -135,7 +134,6 @@ class CustomerDisplay(QWidget):
             orders_data = json.loads(raw_data)
             self.active_orders = orders_data.get('active_orders', [])
             self.completed_orders = orders_data.get('completed_orders', [])
-            print(f"Parsed data: {len(self.active_orders)} active, {len(self.completed_orders)} completed")
         except json.JSONDecodeError as e:
             print(f"Failed to parse order data: {e}")
             return
@@ -204,7 +202,6 @@ class CustomerDisplay(QWidget):
                     self.clear_layout(item.layout())
 
     def cleanup(self):
-        print("Cleaning up...")
         if hasattr(self, 'connectivity'):
             self.connectivity.stop()
             self.connectivity.wait()
@@ -245,7 +242,6 @@ class Connectivity(QThread):
             self.bluetooth_socket = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
             self.bluetooth_socket.bind(("", self.bluetooth_port))
             self.bluetooth_socket.listen(1)
-            print(f"Bluetooth server listening on port {self.bluetooth_port}")
         except Exception as e:
             print(f"Failed to setup Bluetooth server: {e}")
             self.bluetooth_socket = None
@@ -256,7 +252,6 @@ class Connectivity(QThread):
             self.network_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.network_socket.bind(('0.0.0.0', self.network_port))
             self.network_socket.listen(1)
-            print(f"Network server listening on port {self.network_port}")
         except Exception as e:
             print(f"Failed to setup network server: {e}")
             self.network_socket = None
@@ -267,13 +262,13 @@ class Connectivity(QThread):
             
         while self.running:
             try:
-                print("Waiting for Bluetooth connection...")
                 self.bluetooth_socket.settimeout(1)
                 try:
                     client_socket, address = self.bluetooth_socket.accept()
                     self.bluetooth_client = client_socket
                     print(f"Bluetooth connected from {address}")
                 except bluetooth.BluetoothError:
+                    print("Failed to connect to bluetooth")
                     continue
                 
                 while self.running and self.bluetooth_client:
@@ -290,7 +285,6 @@ class Connectivity(QThread):
                             self.bluetooth_client.sendall(b'pong')
                         else:
                             raw_data = data.decode()
-                            print(f"Received Bluetooth data: {raw_data}")
                             self.data_received.emit(raw_data)
                             
                     except socket.timeout:
@@ -313,7 +307,6 @@ class Connectivity(QThread):
                 self.network_socket.settimeout(1)
                 try:
                     client_socket, address = self.network_socket.accept()
-                    print(f"Network connection from {address}")
                     
                     try:
                         client_socket.settimeout(2)
@@ -323,7 +316,6 @@ class Connectivity(QThread):
                             client_socket.sendall(b'pong')
                         else:
                             raw_data = data.decode()
-                            print(f"Received Network data: {raw_data}")
                             self.data_received.emit(raw_data)
                             
                     except socket.timeout:
